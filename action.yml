@@ -1,0 +1,79 @@
+name: 'Trigger Buildkite Pipeline'
+author: 'step-security'
+description: 'A GitHub Action for triggering a build on a Buildkite pipeline.'
+inputs:
+   buildkite_api_access_token:
+     description: 'Buildkite API Access Token'
+     required: true
+   pipeline:
+     description: 'The pipeline to create a build on, in the format <org-slug>/<pipeline-slug>. Either this or pipeline_uuid must be provided.'
+     required: false
+   pipeline_uuid:
+     description: 'The UUID of the pipeline to create a build on. Use this instead of pipeline for a stable identifier that does not change when the pipeline is renamed. Either this or pipeline must be provided.'
+     required: false
+   commit:
+     description: 'The commit SHA of the build'
+     required: false
+     default: HEAD
+   branch:
+     description: 'The branch of the build'
+     required: false
+   message:
+     description: 'The message for the build'
+     required: false
+   send_pull_request:
+     description: 'Whether to set PULL_REQUEST_ID, which sets BUILDKITE_PULL_REQUEST on the build. Does not work for cross-repo builds. Defaults to true'
+     required: false
+   pull_request_base_branch:
+     description: 'For a pull request build, the base branch of the pull request.'
+     required: false
+   build_env_vars:
+     description: 'Additional environment variables to set on the build, in JSON format'
+     required: false
+   build_meta_data:
+     description: 'Meta-data to set on the build, in JSON format'
+     required: false
+   ignore_pipeline_branch_filter:
+     description: 'Ignore pipeline branch filtering when creating a new build. true or false'
+     required: false
+   wait:
+     description: 'Wait for the build to finish before completing. true or false'
+     required: false
+     default: 'false'
+   wait_interval:
+     description: 'Interval in seconds between build status checks when waiting'
+     required: false
+     default: '10'
+   wait_timeout:
+     description: 'Maximum time in seconds to wait for build completion'
+     required: false
+     default: '3600'
+   retry_max_attempts:
+     description: 'Maximum number of retry attempts for API calls during build status polling (for transient failures like 5xx errors)'
+     required: false
+     default: '5'
+   retry_base_delay:
+     description: 'Base delay in seconds for exponential backoff between retry attempts'
+     required: false
+     default: '2'
+   commit_author_name:
+     description: 'Default commit author name to use if not available from event payload (useful for events without pusher field like status events)'
+     required: false
+   commit_author_email:
+     description: 'Default commit author email to use if not available from event payload (useful for events without pusher field like status events)'
+     required: false
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'  
+branding:
+  icon: 'send'
+  color: 'green'
+
+outputs:
+  json:
+    description: 'The full JSON response from the Buildkite API'
+  url:
+    description: 'The URL of the build on Buildkite'
+  state:
+    description: 'The final state of the build (when wait=true)'

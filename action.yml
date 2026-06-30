@@ -65,7 +65,7 @@ inputs:
 
 runs:
   using: 'docker'
-  image: 'Dockerfile'  
+  image: 'docker://ghcr.io/step-security/trigger-pipeline-action:v2.5.0@sha256:f372288798a1ad256d08ffa25a0fba3ece09842dcc82f0713a71479d0a1e6d90' # v2.5.0
 branding:
   icon: 'send'
   color: 'green'

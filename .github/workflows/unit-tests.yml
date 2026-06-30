@@ -8,8 +8,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
       - name: Check out code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Verify that the Docker image for the action builds
         run: docker build . --file Dockerfile
@@ -18,9 +23,14 @@ jobs:
     name: unit-test
     runs-on: ubuntu-latest
     steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
       - name: checkout base image
-        uses: actions/checkout@v7
-      - uses: step-security/docker-run-action@v3
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: step-security/docker-run-action@b82c086bd28f33da6703eb161676a2568f0cc538 # v3.0.0
         with:
           image: buildkite/plugin-tester:v4.1.1
           options: --rm -v ${{ github.workspace }}:/plugin

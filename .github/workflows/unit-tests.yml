@@ -1,0 +1,27 @@
+name: Unit Test
+
+on: push
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Verify that the Docker image for the action builds
+        run: docker build . --file Dockerfile
+
+  tests:
+    name: unit-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout base image
+        uses: actions/checkout@v7
+      - uses: step-security/docker-run-action@v3
+        with:
+          image: buildkite/plugin-tester:v4.1.1
+          options: --rm -v ${{ github.workspace }}:/plugin
+          run: bats tests/.

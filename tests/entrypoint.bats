@@ -1,0 +1,965 @@
+#!/usr/bin/env bats
+
+load "${BATS_PLUGIN_PATH}/load.bash"
+
+# Uncomment to enable stub debugging
+# export CURL_STUB_DEBUG=/dev/tty
+
+setup() {
+  export GITHUB_SHA=a-sha
+  export GITHUB_REF=refs/heads/a-branch
+  export GITHUB_EVENT_PATH="tests/push.json"
+  export GITHUB_ACTION="push"
+  export GITHUB_REPOSITORY="buildkite/test-repo"
+  export HOME='/root' # necessary for output checking
+  export REPO_PRIVATE=false
+  export GITHUB_OUTPUT=/dev/null
+}
+
+teardown() {
+  unset INPUT_BUILDKITE_API_ACCESS_TOKEN
+  unset INPUT_PIPELINE
+  unset INPUT_PIPELINE_UUID
+  if [[ -f "$HOME/push.json" ]]; then rm "$HOME/push.json"; fi
+}
+
+@test "Prints error and fails if \${{ inputs.buildkite_api_access_token }} isn't set" {
+
+  run "${PWD}"/entrypoint.sh
+  assert_output --partial "You must set the buildkite_api_access_token input parameter"
+  assert_failure
+}
+
+@test "Prints error and fails if neither pipeline nor pipeline_uuid is set" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+
+  run "${PWD}"/entrypoint.sh
+  assert_output --partial "You must set either the pipeline input parameter"
+  assert_failure
+}
+
+@test "Creates a build with defaults" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Creates a build with commit from \${{ inputs.commit }}" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_COMMIT="custom-commit"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"custom-commit","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Creates a build with branch from \${{ inputs.branch }}" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_BRANCH="custom-branch"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"custom-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Creates a build from pull request" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_PULL_REQUEST_BASE_BRANCH="b-branch"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_PATH="tests/pullrequest.json"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"pull_request_id":"1337","pull_request_base_branch":"b-branch","env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Creates a build with branch from \${{ inputs.message }}" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_MESSAGE="A custom message"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"A custom message","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Creates a build with build env vars from \${{ inputs.build_env_vars }}" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_BUILD_ENV_VARS="{\"FOO\": \"bar\"}"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"FOO":"bar","GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Creates a build with build meta-data vars from \${{ inputs.build_meta_data }}" {
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_BUILD_META_DATA="{\"FOO\": \"bar\"}"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"meta_data":{"FOO":"bar"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Creates a build with ignore_pipeline_branch_filters set to true from \${{ inputs.ignore_pipeline_branch_filter }}" {
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_BUILD_ENV_VARS="{\"FOO\": \"bar\"}"
+  export INPUT_IGNORE_PIPELINE_BRANCH_FILTER="true"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"ignore_pipeline_branch_filters":true,"env":{"FOO":"bar","GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run $PWD/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Creates a build with send_pull_request set to false from \${{ inputs.send_pull_request }}" {
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_BUILD_ENV_VARS="{\"FOO\": \"bar\"}"
+  export INPUT_SEND_PULL_REQUEST="false"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+  export GITHUB_EVENT_PATH="tests/pullrequest.json"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"FOO":"bar","GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run $PWD/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Writes outputs to \$GITHUB_OUTPUT file if defined" {
+  TEST_TEMP_DIR="$(temp_make)"
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_BUILD_ENV_VARS="{\"FOO\": \"bar\"}"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_OUTPUT=$TEST_TEMP_DIR/github_output_file
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"FOO":"bar","GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  assert_file_not_exist $GITHUB_OUTPUT
+  assert_not_exist $GITHUB_OUTPUT
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+  assert_file_exist $GITHUB_OUTPUT
+  assert_exist $GITHUB_OUTPUT
+
+  github_output=$(cat $GITHUB_OUTPUT)
+  expected_output=$(echo -e "json=$RESPONSE_JSON\nurl=https://buildkite.com/build-url\n")
+  assert_equal "$github_output" "$expected_output"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Prints curl error on HTTP error" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 401"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "API request failed with HTTP 401 (non-retryable client error)"
+
+  assert_failure 1
+
+  unstub curl
+}
+
+@test "Prints curl error and ignores non-JSON response on HTTP error" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_HTML='<html></html>'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_HTML' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 401"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "API request failed with HTTP 401 (non-retryable client error)"
+  assert_output --partial "<html></html>"
+  refute_output --partial "parse error"
+
+  assert_failure 1
+
+  unstub curl
+}
+
+@test "Prints curl error but not null JSON response message on HTTP error" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"message": null}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 401"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "API request failed with HTTP 401 (non-retryable client error)"
+  assert_output --partial '{"message": null}'
+
+  assert_failure 1
+
+  unstub curl
+}
+
+@test "Prints curl error and JSON response message on HTTP error" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"message": "Error Message."}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 401"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "API request failed with HTTP 401 (non-retryable client error)"
+  assert_output --partial '{"message": "Error Message."}'
+
+  assert_failure 1
+
+  unstub curl
+}
+
+@test "Prints error and fails if \${{ inputs.build_env_vars }} is not valid JSON" {
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_BUILD_ENV_VARS="broken"
+  export GITHUB_EVENT_NAME="create"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Error: build_env_vars provided invalid JSON: broken"
+
+  assert_failure
+}
+
+@test "Prints error and fails if \${{ inputs.build_meta_data }} is not valid JSON" {
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_BUILD_META_DATA="broken"
+  export GITHUB_EVENT_NAME="create"
+
+  run $PWD/entrypoint.sh
+
+  assert_output --partial "Error: build_meta_data provided invalid JSON: broken"
+
+  assert_failure
+}
+
+@test "Sets DELETED_EVENT_REF on delete event" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_ACTION="delete"
+  export GITHUB_EVENT_NAME="delete"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"DELETE_EVENT_REF":"null","GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run $PWD/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Combines DELETED_EVENT_REF and build_env_vars correctly" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_BUILD_ENV_VARS="{\"FOO\": \"bar\"}"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_ACTION="delete"
+  export GITHUB_EVENT_NAME="delete"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"DELETE_EVENT_REF":"null","FOO":"bar","GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run $PWD/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Waits for build to complete successfully" {
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_WAIT="true"
+  export INPUT_WAIT_INTERVAL="1"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+  export GITHUB_OUTPUT=$TEST_TEMP_DIR/github_output_file
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  CREATE_RESPONSE='{"web_url": "https://buildkite.com/build-url", "number": "123"}'
+  STATUS_RESPONSE_RUNNING='{"state": "running"}'
+  STATUS_RESPONSE_PASSED='{"state": "passed"}'
+
+  # Stub curl to handle both the create build call and the status check calls
+  stub curl \
+    "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$CREATE_RESPONSE' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200" \
+    "--silent --show-error --write-out %{http_code} --output * -H \"Authorization: Bearer 123\" https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123 : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$STATUS_RESPONSE_RUNNING' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200" \
+    "--silent --show-error --write-out %{http_code} --output * -H \"Authorization: Bearer 123\" https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123 : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$STATUS_RESPONSE_PASSED' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+  assert_output --partial "Waiting for build 123 to complete..."
+  assert_output --partial "Build status: running"
+  assert_output --partial "Build passed!"
+  assert_success
+
+  unstub curl
+}
+
+@test "Exits with failure when waited build fails" {
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_WAIT="true"
+  export INPUT_WAIT_INTERVAL="1"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+  export GITHUB_OUTPUT=$TEST_TEMP_DIR/github_output_file
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  CREATE_RESPONSE='{"web_url": "https://buildkite.com/build-url", "number": "123"}'
+  STATUS_RESPONSE_RUNNING='{"state": "running"}'
+  STATUS_RESPONSE_FAILED='{"state": "failed"}'
+
+  # Stub curl to handle both the create build call and the status check calls
+  stub curl \
+    "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$CREATE_RESPONSE' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200" \
+    "--silent --show-error --write-out %{http_code} --output * -H \"Authorization: Bearer 123\" https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123 : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$STATUS_RESPONSE_RUNNING' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200" \
+    "--silent --show-error --write-out %{http_code} --output * -H \"Authorization: Bearer 123\" https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123 : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$STATUS_RESPONSE_FAILED' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+  assert_output --partial "Waiting for build 123 to complete..."
+  assert_output --partial "Build status: running"
+  assert_output --partial "Build finished with state: failed"
+  assert_output --partial "Build did not complete successfully"
+  assert_failure
+
+  unstub curl
+}
+
+@test "Creates a build with author from commit.commit when pusher is not available (status events)" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_PATH="tests/status.json"
+  export GITHUB_EVENT_NAME="status"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"Status Author","email":"status@author.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Creates a build with author from default parameters when no author in event" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_COMMIT_AUTHOR_NAME="Default Name"
+  export INPUT_COMMIT_AUTHOR_EMAIL="default@email.com"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_PATH="tests/no-author.json"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"Default Name","email":"default@email.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Pusher fields take precedence over default parameters" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_COMMIT_AUTHOR_NAME="Default Name"
+  export INPUT_COMMIT_AUTHOR_EMAIL="default@email.com"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_PATH="tests/push.json"
+  export GITHUB_EVENT_NAME="push"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Retries on 500 error and succeeds" {
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_WAIT="true"
+  export INPUT_WAIT_INTERVAL="1"
+  export INPUT_RETRY_MAX_ATTEMPTS="3"
+  export INPUT_RETRY_BASE_DELAY="1"
+  export GITHUB_EVENT_NAME="create"
+  export GITHUB_OUTPUT=$TEST_TEMP_DIR/github_output_file
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  CREATE_RESPONSE='{"web_url": "https://buildkite.com/build-url", "number": "123"}'
+  STATUS_RESPONSE_PASSED='{"state": "passed"}'
+
+  stub curl \
+    "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$CREATE_RESPONSE' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200" \
+    "--silent --show-error --write-out %{http_code} --output * -H \"Authorization: Bearer 123\" https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123 : echo 500" \
+    "--silent --show-error --write-out %{http_code} --output * -H \"Authorization: Bearer 123\" https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123 : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$STATUS_RESPONSE_PASSED' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "Waiting for build 123 to complete..."
+  assert_output --partial "API request failed with HTTP 500:"
+  assert_output --partial "Retrying in"
+  assert_output --partial "Build passed!"
+  assert_success
+
+  unstub curl
+}
+
+@test "Retries on 503 error and succeeds" {
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_WAIT="true"
+  export INPUT_WAIT_INTERVAL="1"
+  export INPUT_RETRY_MAX_ATTEMPTS="3"
+  export INPUT_RETRY_BASE_DELAY="1"
+  export GITHUB_EVENT_NAME="create"
+  export GITHUB_OUTPUT=$TEST_TEMP_DIR/github_output_file
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  CREATE_RESPONSE='{"web_url": "https://buildkite.com/build-url", "number": "123"}'
+  STATUS_RESPONSE_PASSED='{"state": "passed"}'
+
+  stub curl \
+    "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$CREATE_RESPONSE' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200" \
+    "--silent --show-error --write-out %{http_code} --output * -H \"Authorization: Bearer 123\" https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123 : echo 503" \
+    "--silent --show-error --write-out %{http_code} --output * -H \"Authorization: Bearer 123\" https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123 : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$STATUS_RESPONSE_PASSED' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "Waiting for build 123 to complete..."
+  assert_output --partial "API request failed with HTTP 503:"
+  assert_output --partial "Retrying in"
+  assert_output --partial "Build passed!"
+  assert_success
+
+  unstub curl
+}
+
+@test "Retries on 429 rate limit and succeeds" {
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_WAIT="true"
+  export INPUT_WAIT_INTERVAL="1"
+  export INPUT_RETRY_MAX_ATTEMPTS="3"
+  export INPUT_RETRY_BASE_DELAY="1"
+  export GITHUB_EVENT_NAME="create"
+  export GITHUB_OUTPUT=$TEST_TEMP_DIR/github_output_file
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  CREATE_RESPONSE='{"web_url": "https://buildkite.com/build-url", "number": "123"}'
+  STATUS_RESPONSE_PASSED='{"state": "passed"}'
+
+  stub curl \
+    "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$CREATE_RESPONSE' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200" \
+    "--silent --show-error --write-out %{http_code} --output * -H \"Authorization: Bearer 123\" https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123 : echo 429" \
+    "--silent --show-error --write-out %{http_code} --output * -H \"Authorization: Bearer 123\" https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123 : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$STATUS_RESPONSE_PASSED' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "Waiting for build 123 to complete..."
+  assert_output --partial "API request failed with HTTP 429:"
+  assert_output --partial "Retrying in"
+  assert_output --partial "Build passed!"
+  assert_success
+
+  unstub curl
+}
+
+@test "Fails fast on 404 error without retry" {
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_WAIT="true"
+  export INPUT_WAIT_INTERVAL="1"
+  export INPUT_RETRY_MAX_ATTEMPTS="3"
+  export INPUT_RETRY_BASE_DELAY="1"
+  export GITHUB_EVENT_NAME="create"
+  export GITHUB_OUTPUT=$TEST_TEMP_DIR/github_output_file
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  CREATE_RESPONSE='{"web_url": "https://buildkite.com/build-url", "number": "123"}'
+
+  stub curl \
+    "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$CREATE_RESPONSE' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200" \
+    "--silent --show-error --write-out %{http_code} --output * -H \"Authorization: Bearer 123\" https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123 : echo 404"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "Waiting for build 123 to complete..."
+  assert_output --partial "API request failed with HTTP 404 (non-retryable client error)"
+  assert_output --partial "Failed to fetch build status after retries"
+  assert_output --partial "Build did not complete successfully"
+  refute_output --partial "Retrying"
+  assert_failure
+
+  unstub curl
+}
+
+@test "Fails after max retries" {
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_WAIT="true"
+  export INPUT_WAIT_INTERVAL="1"
+  export INPUT_RETRY_MAX_ATTEMPTS="2"
+  export INPUT_RETRY_BASE_DELAY="1"
+  export GITHUB_EVENT_NAME="create"
+  export GITHUB_OUTPUT=$TEST_TEMP_DIR/github_output_file
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  CREATE_RESPONSE='{"web_url": "https://buildkite.com/build-url", "number": "123"}'
+
+  stub curl \
+    "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$CREATE_RESPONSE' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200" \
+    "--silent --show-error --write-out %{http_code} --output * -H \"Authorization: Bearer 123\" https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123 : echo 500" \
+    "--silent --show-error --write-out %{http_code} --output * -H \"Authorization: Bearer 123\" https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123 : echo 500"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "Waiting for build 123 to complete..."
+  assert_output --partial "API request failed with HTTP 500:"
+  assert_output --partial "Retrying in"
+  assert_output --partial "API request failed with HTTP 500 after 2 attempts"
+  assert_output --partial "Failed to fetch build status after retries"
+  assert_output --partial "Build did not complete successfully"
+  assert_failure
+
+  unstub curl
+}
+
+@test "curl_with_retry handles POST requests with retry on 500" {
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="test-token"
+  export INPUT_PIPELINE="test-org/test-pipeline"
+  export GITHUB_EVENT_NAME="push"
+  
+  # Extract both functions we need to test
+  eval "$(sed -n '/^function calculate_backoff_delay()/,/^function wait_for_build()/p' "${PWD}"/entrypoint.sh | head -n -1)"
+  
+  # Stub curl: first POST returns 500, second succeeds
+  stub curl \
+    "--silent --show-error --write-out %{http_code} --output * -X POST -H * -d * https://api.test.com/endpoint : echo 500" \
+    "--silent --show-error --write-out %{http_code} --output * -X POST -H * -d * https://api.test.com/endpoint : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '{\"result\":\"success\"}' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+  
+  run curl_with_retry "https://api.test.com/endpoint" "test-token" 3 1 "POST" '{"test":"data"}'
+  
+  assert_output --partial '{"result":"success"}'
+  assert_success
+  
+  unstub curl
+}
+
+@test "curl_with_retry handles GET requests with retry on 503" {
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="test-token"
+  export INPUT_PIPELINE="test-org/test-pipeline"
+  export GITHUB_EVENT_NAME="push"
+  
+  # Extract both functions we need to test
+  eval "$(sed -n '/^function calculate_backoff_delay()/,/^function wait_for_build()/p' "${PWD}"/entrypoint.sh | head -n -1)"
+  
+  # Stub curl: first GET returns 503, second succeeds
+  stub curl \
+    "--silent --show-error --write-out %{http_code} --output * -H * https://api.test.com/status : echo 503" \
+    "--silent --show-error --write-out %{http_code} --output * -H * https://api.test.com/status : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '{\"status\":\"ok\"}' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+  
+  run curl_with_retry "https://api.test.com/status" "test-token" 3 1
+  
+  assert_output --partial '{"status":"ok"}'
+  assert_success
+  
+  unstub curl
+}
+
+@test "Creates a build with pipeline_uuid" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE_UUID="0190df6f-c1e7-46c6-bf80-0c93f8ffb0e7"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url", "url": "https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123", "pipeline": {"slug": "my-pipeline"}}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/pipelines/0190df6f-c1e7-46c6-bf80-0c93f8ffb0e7/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Creates a build with pipeline_uuid and waits for completion" {
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE_UUID="0190df6f-c1e7-46c6-bf80-0c93f8ffb0e7"
+  export INPUT_WAIT="true"
+  export INPUT_WAIT_INTERVAL="1"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+  export GITHUB_OUTPUT=$TEST_TEMP_DIR/github_output_file
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  CREATE_RESPONSE='{"web_url": "https://buildkite.com/build-url", "number": "123", "url": "https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123", "pipeline": {"slug": "my-pipeline"}}'
+  STATUS_RESPONSE_PASSED='{"state": "passed"}'
+
+  stub curl \
+    "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/pipelines/0190df6f-c1e7-46c6-bf80-0c93f8ffb0e7/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$CREATE_RESPONSE' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200" \
+    "--silent --show-error --write-out %{http_code} --output * -H \"Authorization: Bearer 123\" https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123 : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$STATUS_RESPONSE_PASSED' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+  assert_output --partial "Waiting for build 123 to complete..."
+  assert_output --partial "Build passed!"
+  assert_success
+
+  unstub curl
+}
+
+@test "pipeline_uuid takes precedence over pipeline when both are set" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="different-org/different-pipeline"
+  export INPUT_PIPELINE_UUID="0190df6f-c1e7-46c6-bf80-0c93f8ffb0e7"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url", "url": "https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds/123", "pipeline": {"slug": "my-pipeline"}}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/pipelines/0190df6f-c1e7-46c6-bf80-0c93f8ffb0e7/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Build created:"
+  assert_output --partial "https://buildkite.com/build-url"
+
+  assert_success
+
+  unstub curl
+}
+
+@test "Shows StepSecurity banner on every run" {
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "StepSecurity Maintained Action"
+  assert_output --partial "Secure drop-in replacement for buildkite/trigger-pipeline-action"
+  assert_failure
+}
+
+@test "Shows free message for public repo" {
+
+  export REPO_PRIVATE=false
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "✓ Free for public repositories"
+  assert_failure
+}
+
+@test "Does not show free message for private repo" {
+
+  export REPO_PRIVATE=true
+
+  stub curl "--max-time 3 -s -w %{http_code} -X POST -H * -d * https://agent.api.stepsecurity.io/v1/github/buildkite/test-repo/actions/maintained-actions-subscription -o /dev/null : echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  refute_output --partial "✓ Free for public repositories"
+  assert_failure
+
+  unstub curl
+}
+
+@test "Exits with error when subscription API returns 403 for private repo" {
+
+  export REPO_PRIVATE=true
+
+  stub curl "--max-time 3 -s -w %{http_code} -X POST -H * -d * https://agent.api.stepsecurity.io/v1/github/buildkite/test-repo/actions/maintained-actions-subscription -o /dev/null : echo 403"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "This action requires a StepSecurity subscription for private repositories"
+  assert_failure
+
+  unstub curl
+}
+
+@test "Continues when subscription API times out for private repo" {
+
+  export REPO_PRIVATE=true
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl \
+    "--max-time 3 -s -w %{http_code} -X POST -H * -d * https://agent.api.stepsecurity.io/v1/github/buildkite/test-repo/actions/maintained-actions-subscription -o /dev/null : exit 1" \
+    "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Timeout or API not reachable. Continuing to next step."
+  assert_output --partial "Build created:"
+  assert_success
+
+  unstub curl
+}
+
+@test "Continues when subscription API returns 200 for private repo" {
+
+  export REPO_PRIVATE=true
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl \
+    "--max-time 3 -s -w %{http_code} -X POST -H * -d * https://agent.api.stepsecurity.io/v1/github/buildkite/test-repo/actions/maintained-actions-subscription -o /dev/null : echo 200" \
+    "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  refute_output --partial "This action requires a StepSecurity subscription"
+  assert_output --partial "Build created:"
+  assert_success
+
+  unstub curl
+}
+
+@test "Fails when GITHUB_OUTPUT is not set" {
+
+  export INPUT_BUILDKITE_API_ACCESS_TOKEN="123"
+  export INPUT_PIPELINE="my-org/my-pipeline"
+  export INPUT_RETRY_BASE_DELAY="0"
+  export GITHUB_EVENT_NAME="create"
+  unset GITHUB_OUTPUT
+
+  EXPECTED_JSON='{"commit":"a-sha","branch":"a-branch","message":"","author":{"name":"The Pusher","email":"pusher@pusher.com"},"env":{"GITHUB_REPOSITORY":"buildkite/test-repo","SOURCE_REPO_SHA":"a-sha","SOURCE_REPO_REF":"a-branch"}}'
+  RESPONSE_JSON='{"web_url": "https://buildkite.com/build-url"}'
+
+  stub curl "--silent --show-error --write-out %{http_code} --output * -X POST -H \"Authorization: Bearer 123\" -d '$EXPECTED_JSON' https://api.buildkite.com/v2/organizations/my-org/pipelines/my-pipeline/builds : output_file=\"\"; for i in \"\$@\"; do if [ \"\$output_file\" = \"next\" ]; then echo '$RESPONSE_JSON' > \"\$i\"; break; fi; [ \"\$i\" = \"--output\" ] && output_file=\"next\"; done; echo 200"
+
+  run "${PWD}"/entrypoint.sh
+
+  assert_output --partial "Error: GITHUB_OUTPUT is not set"
+  assert_failure
+
+  unstub curl
+}
